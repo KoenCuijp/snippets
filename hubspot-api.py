@@ -109,7 +109,7 @@ class HubspotAPI:
         """
         response = self.do_hubspot_request(
             method='GET',
-            url=f'{self.get_url(self.LINE_ITEMS_ENDPOINT)}/{line_item_id}',
+            url=f'{self.get_url(self.LINE_ITEMS_ENDPOINT)}/{line_item_id}?properties=name',
         )
         return response.json()
     
