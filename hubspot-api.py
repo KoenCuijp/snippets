@@ -1,4 +1,6 @@
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
 
 from datetime import datetime, timedelta
 
@@ -16,6 +18,7 @@ class HubspotAPI:
     """
     def __init__(self, token):
         self.TOKEN = token
+        self.SESSION = None
         self.BASE_URL = 'https://api.hubapi.com'
         self.QUOTE_ENDPOINT = 'crm/v3/objects/quotes'
         self.QUOTE_PROPERTIES_ENDPOINT = 'crm/v3/properties/quotes'
@@ -27,16 +30,66 @@ class HubspotAPI:
             'Content-Type': 'application/json'
         }
 
+    def get_session(self) -> requests.Session:
+        """
+        Returns a requests session with retries, creates one if it doesn't exist
+        """
+        if self.SESSION is not None:
+            return self.SESSION
+
+        self.SESSION = requests.Session()
+        retries = Retry(total=5, backoff_factor=1, status_forcelist=[
+                429, 477, 500, 502, 503, 504, 521, 522, 523, 524, 525, 526
+            ]
+        )
+        self.SESSION.mount('https://', HTTPAdapter(max_retries=retries))
+        return self.SESSION
+
     def get_url(self, endpoint: str) -> str:
         return f'{self.BASE_URL}/{endpoint}'
     
+    def do_hubspot_request(
+            self,
+            method: str,
+            url: str,
+            params: str = None,
+            payload: dict | list[dict] = None,
+        ) -> requests.Response:
+        """
+        Main method to do a request to the Hubspot API, includes retries
+        """
+        session = self.get_session()
+
+        if method == 'GET':
+            response = session.get(
+                url=url,
+                headers=self.HEADERS,
+                params=params
+            )
+        elif method == 'PUT':
+            response = session.put(
+                url=url,
+                headers=self.HEADERS,
+                json=payload
+            )
+        elif method == 'POST':
+            response = session.post(
+                url=url,
+                headers=self.HEADERS,
+                json=payload
+            )
+        else:
+            raise Exception(f'Invalid method: {method}')
+
+        return response
+
     def get_existing_deal(self, deal_id: str) -> dict:
         """
         Get an existing deal from Hubspot and return it
         """
-        response = requests.get(
+        response = self.do_hubspot_request(
+            method='GET',
             url=f'{self.get_url(self.DEALS_ENDPOINT)}/{deal_id}',
-            headers=self.HEADERS,
             params="associations=contacts,line_items"
         )
         return response.json()
@@ -45,9 +98,9 @@ class HubspotAPI:
         """
         Get an existing line item from Hubspot and return it
         """
-        response = requests.get(
+        response = self.do_hubspot_request(
+            method='GET',
             url=f'{self.get_url(self.LINE_ITEMS_ENDPOINT)}/{line_item_id}?properties=name',
-            headers=self.HEADERS
         )
         return response.json()
     
@@ -55,10 +108,10 @@ class HubspotAPI:
         """
         Create a quote in Hubspot and return its id
         """
-        response = requests.post(
+        response = self.do_hubspot_request(
+            method='POST',
             url=self.get_url(self.QUOTE_ENDPOINT),
-            headers=self.HEADERS,
-            json=self.create_quote_payload(quote_title)
+            payload=self.create_quote_payload(quote_title)
         )
         return response.json()['id']
 
@@ -87,7 +140,7 @@ class HubspotAPI:
         Associate a quote to the given other Hubspot object (e.g. deal, contact, etc)
         """
         url = f'{self.BASE_URL}/crm/v4/objects/quotes/{quote_id}/associations/default/{object_type}/{object_id}'
-        response = requests.put(url=url, headers=self.HEADERS)
+        response = self.do_hubspot_request(method='PUT', url=url)
         print(f'Associated quote to {object_type} {object_id}: {response.status_code}')
     
     def associate_quote_to_signer(self, quote_id: int, contact_id: str) -> None:
@@ -95,10 +148,10 @@ class HubspotAPI:
         Associate a quote to the contact that has to sign the quote
         """
         url = f'{self.BASE_URL}/crm/v4/objects/quote/{quote_id}/associations/contact/{contact_id}'
-        requests.put(
+        self.do_hubspot_request(
+            method='PUT',
             url=url,
-            headers=self.HEADERS,
-            json=[
+            payload=[
                 {
                     # Association: Quote-to-contract-signer
                     "associationCategory": "HUBSPOT_DEFINED",
