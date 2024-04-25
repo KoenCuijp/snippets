@@ -7,7 +7,8 @@ from datetime import datetime, timedelta
 # TODO: replace before running in Zapier
 input_data = {
     "DEAL_ID": "12738903762",
-    "DEAL_NAME": "Utrecht Photo Challenge 2024"
+    "DEAL_NAME": "Utrecht Photo Challenge 2024",
+    "NUMBER_OF_PERSONS": 45,
 }
 
 TEMPLATE_ID = 115428778483
@@ -72,6 +73,12 @@ class HubspotAPI:
                 headers=self.HEADERS,
                 json=payload
             )
+        elif method == 'PATCH':
+            response = session.patch(
+                url=url,
+                headers=self.HEADERS,
+                json=payload
+            )
         elif method == 'POST':
             response = session.post(
                 url=url,
@@ -100,10 +107,25 @@ class HubspotAPI:
         """
         response = self.do_hubspot_request(
             method='GET',
-            url=f'{self.get_url(self.LINE_ITEMS_ENDPOINT)}/{line_item_id}?properties=name',
+            url=f'{self.get_url(self.LINE_ITEMS_ENDPOINT)}/{line_item_id}',
         )
         return response.json()
     
+    def update_line_item(self, line_item_id: str, number_of_persons: int) -> None:
+        """
+        Update the amount of persons for a line item
+        """
+        response = self.do_hubspot_request(
+            method='PATCH',
+            url=f'{self.get_url(self.LINE_ITEMS_ENDPOINT)}/{line_item_id}',
+            payload={
+                "properties": {
+                    "quantity": number_of_persons
+                }
+            }
+        )
+        print(f'Updated line item {line_item_id} with amount {number_of_persons}: Status {response.status_code}')
+
     def create_quote(self, quote_title: str) -> int:
         """
         Create a quote in Hubspot and return its id
@@ -165,17 +187,20 @@ class HubspotAPI:
 START OF LOGIC
 
 FLOW:
-    1. Create a quote with a title, expiration & esign enabled, TODO: add photochallenge properties
-    2. Associate quote w/ quote template
-    3. Associate quote w/ deal
-    4. Associate quote w/ lineitem
-    5. Associate quote w/ contact
-    6. Associate quote w/ quote signer (https://developers.hubspot.com/beta-docs/guides/api/crm/commerce/quotes#associating-quote-signers)
+    1. Get the existing deal that triggered this Zap (deal=created by hubspot form automation)
+    2. Get the line items of this deal, and correct the amount of persons of the line item
+        a. Hubspot automation doesn't allow for dynamic line item amounts, so we have to correct this
+    3. Create a quote with a title, expiration & esign enabled, TODO: add photochallenge properties
+    4. Associate quote w/ quote template
+    5. Associate quote w/ deal
+    6. Associate quote w/ lineitem
+    7. Associate quote w/ contact
+    8. Associate quote w/ quote signer (https://developers.hubspot.com/beta-docs/guides/api/crm/commerce/quotes#associating-quote-signers)
 """
 
 HUBSPOT_API = HubspotAPI(token='pat-eu1-b3414dd4-2d72-4832-a44b-b728368e2a2b')
 
-# 0. GET EXISTING DEAL DATA
+# 1. GET EXISTING DEAL DATA
 existing_deal = HUBSPOT_API.get_existing_deal(deal_id=input_data['DEAL_ID'])
 
 # TODO: this is not robust, handle non-existing associations
@@ -183,40 +208,41 @@ line_item_ids = {line_item['id'] for line_item in existing_deal['associations'][
 contact_id = existing_deal['associations']['contacts']['results'][0]['id']
 
 for line_item_id in line_item_ids:
-    # 0. Get line item for Challenge name
+    # 2. Get line item, and correct the amount of persons
     line_item = HUBSPOT_API.get_line_item(line_item_id)
     challenge_name = line_item["properties"]["name"]
+    HUBSPOT_API.update_line_item(line_item_id, number_of_persons=input_data["NUMBER_OF_PERSONS"])
 
-    # 1. CREATE QUOTE
+    # 3. CREATE QUOTE
     quote_id = HUBSPOT_API.create_quote(quote_title=f'{challenge_name} - {input_data["DEAL_NAME"]}')
 
-    # 2. ASSOCIATE w/ TEMPLATE
+    # 4. ASSOCIATE w/ TEMPLATE
     HUBSPOT_API.associate_quote_to(
         quote_id=quote_id,
         object_type='quote_template',
         object_id=TEMPLATE_ID
     )
 
-    # 3. ASSOCIATE w/ DEAL
+    # 5. ASSOCIATE w/ DEAL
     HUBSPOT_API.associate_quote_to(
         quote_id=quote_id,
         object_type='deals',
         object_id=input_data["DEAL_ID"]
     )
 
-    # 4. ASSOCIATE w/ LINE_ITEM
+    # 6. ASSOCIATE w/ LINE_ITEM
     HUBSPOT_API.associate_quote_to(
         quote_id=quote_id,
         object_type='line_items',
         object_id=line_item_id
     )
 
-    # 5. ASSOCIATE w/ CONTACT
+    # 7. ASSOCIATE w/ CONTACT
     HUBSPOT_API.associate_quote_to(
         quote_id=quote_id,
         object_type='contacts',
         object_id=contact_id
     )
 
-    # 6. ASSOCIATE w/ SIGNER
+    # 8. ASSOCIATE w/ SIGNER
     HUBSPOT_API.associate_quote_to_signer(quote_id, contact_id)
