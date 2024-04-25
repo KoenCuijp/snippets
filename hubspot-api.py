@@ -4,13 +4,15 @@ from urllib3.util import Retry
 
 from datetime import datetime, timedelta
 
-# TODO: replace before running in Zapier
-input_data = {
-    "DEAL_ID": "12738903762",
-    "DEAL_NAME": "Utrecht Photo Challenge 2024",
-    "NUMBER_OF_PERSONS": 45,
-}
+# # Enable dictionary below when debugging locally.
+# # Resembles the input_data dict that Zapier provides
+# input_data = {
+#     "DEAL_ID": "12738903762",
+#     "DEAL_NAME": "Utrecht Photo Challenge 2024",
+#     "NUMBER_OF_PERSONS": 45,
+# }
 
+# Hubspot template for the quote
 TEMPLATE_ID = 115428778483
 
 class HubspotAPI:
