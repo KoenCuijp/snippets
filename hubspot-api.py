@@ -4,6 +4,8 @@ from urllib3.util import Retry
 
 from datetime import datetime, timedelta
 
+from .secrets import HUBSPOT_TOKEN
+
 # # Enable dictionary below when debugging locally.
 # # Resembles the input_data dict that Zapier provides
 # input_data = {
@@ -225,7 +227,7 @@ FLOW:
     9. Activate the quote
 """
 
-HUBSPOT_API = HubspotAPI(token='pat-eu1-b3414dd4-2d72-4832-a44b-b728368e2a2b')
+HUBSPOT_API = HubspotAPI(token=HUBSPOT_TOKEN)
 
 # 1. GET EXISTING DEAL DATA
 existing_deal = HUBSPOT_API.get_existing_deal(deal_id=input_data['DEAL_ID'])
