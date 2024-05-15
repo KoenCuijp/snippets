@@ -4,7 +4,7 @@ from urllib3.util import Retry
 
 from datetime import datetime, timedelta
 
-from .secrets import HUBSPOT_TOKEN
+from credentials import HUBSPOT_TOKEN
 
 # # Enable dictionary below when debugging locally.
 # # Resembles the input_data dict that Zapier provides
