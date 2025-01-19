@@ -127,7 +127,10 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-secrets.py
+
+# Secrets
+credentials.py
+google-service-account.json
 
 # Spyder project settings
 .spyderproject
