@@ -30,16 +30,22 @@ def make_request(url, method='GET', headers=None, data=None, params=None):
 
 def get_freshsales_deals(api_key, domain):
     deals = []
-    url = f'https://{domain}/api/deals/view/31007998271'
+    page = 1
+    url = f'https://{domain}/api/deals/view/31007998271?per_page=25'
     headers = {
         'Authorization': f'Token token={api_key}',
         'Content-Type': 'application/json'
     }
 
-    while url:
-        data = make_request(url, headers=headers)
+    done_fetching = False
+    while not done_fetching:
+        page_url = f'{url}&page={page}'
+        print(f'GET {page_url}')
+        data = make_request(page_url, headers=headers)
+        max_page = data['meta']['total_pages']
+        done_fetching = page >= max_page
         deals.extend(data['deals'])
-        url = data['meta']['next_page'] if 'meta' in data and 'next_page' in data['meta'] else None
+        page += 1
 
     return deals
 
@@ -96,11 +102,15 @@ def should_update_calendar_event(deal_start, event_start, deal_end, event_end):
 
 
 def sync_calendar_with_deal(deal):
-    print(f'SYNC {deal["id"]} - {deal["name"]}')
+    print(f'CHECK {deal["id"]} - {deal["name"]}')
     deal_start, deal_end, calendar_event_id = extract_fields_from_deal(deal)
         
-    if not all([calendar_event_id, deal_start, deal_end]):
-        print('-> Deal is missing date, starting time, or end time, skipping\n')
+    if not all([deal_start, deal_end]):
+        print('-> Missing date/start/end-time, skipping\n')
+        return
+
+    if not calendar_event_id:
+        print('-> Missing Calendar ID, skipping\n')
         return
 
     event = get_google_calendar_event(calendar_event_id)
@@ -111,7 +121,7 @@ def sync_calendar_with_deal(deal):
     update_needed = should_update_calendar_event(deal_start, event_start, deal_end, event_end)
 
     if update_needed:
-        print(f'-> Updating event from start {event_start}->{deal_start} and end {event_end}->{deal_end}\n')
+        print(f'-> SYNCING: start {event_start}->{deal_start} & end {event_end}->{deal_end}\n')
         event_data = {
             'start': {
                 'dateTime': deal_start.strftime(GOOGLE_TIMESTAMP_FORMAT)
@@ -127,7 +137,8 @@ def sync_calendar_with_deal(deal):
 
 def sync_freshsales_with_google_calendar():
     deals = get_freshsales_deals(FRESHSALES_TOKEN, FRESHSALES_DOMAIN)
-    for deal in deals['deals']:
+
+    for deal in deals:
         sync_calendar_with_deal(deal)
 
 
