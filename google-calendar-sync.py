@@ -31,7 +31,8 @@ def make_request(url, method='GET', headers=None, data=None, params=None):
 def get_freshsales_deals(api_key, domain):
     deals = []
     page = 1
-    url = f'https://{domain}/api/deals/view/31007998271?per_page=25'
+    page_size = 25
+    url = f'https://{domain}/api/deals/view/31007998271?per_page={page_size}'
     headers = {
         'Authorization': f'Token token={api_key}',
         'Content-Type': 'application/json'
@@ -42,7 +43,7 @@ def get_freshsales_deals(api_key, domain):
         page_url = f'{url}&page={page}'
         print(f'GET {page_url}')
         data = make_request(page_url, headers=headers)
-        max_page = data['meta']['total_pages']
+        max_page = data['meta']['total_pages'] if data.get('meta', {}).get('total_pages') else 1
         done_fetching = page >= max_page
         deals.extend(data['deals'])
         page += 1
