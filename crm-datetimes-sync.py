@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import requests
 
 from datetime import datetime
@@ -16,6 +17,8 @@ from credentials import FRESHSALES_TOKEN, FRESHSALES_DOMAIN, GOOGLE_CALENDAR_ID
 GOOGLE_TIMESTAMP_FORMAT = '%Y-%m-%dT%H:%M:%S%z'
 TIMESTAMP_WITHOUT_TIMEZONE = GOOGLE_TIMESTAMP_FORMAT.replace('%z', '')
 AMSTERDAM_TIMEZONE = pytz.timezone('Europe/Amsterdam')
+PARENT_DIR = os.path.dirname(os.path.abspath(__file__))
+SERVICE_ACCOUNT_FILE = os.path.join(PARENT_DIR, 'upc-google-service-account.json')
 
 # Global variable to store credentials
 credentials = None
@@ -24,7 +27,7 @@ def get_google_access_token():
     global credentials
     if credentials is None:
         credentials = service_account.Credentials.from_service_account_file(
-            'upc-google-service-account.json',
+            SERVICE_ACCOUNT_FILE,
             scopes=['https://www.googleapis.com/auth/calendar'],
             # impersonate upc user to send emails from this email address
             subject='info@utrechtphotochallenge.com'
