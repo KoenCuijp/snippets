@@ -130,7 +130,7 @@ venv.bak/
 
 # Secrets
 credentials.py
-google-service-account.json
+*google-service-account.json
 
 # Spyder project settings
 .spyderproject
@@ -155,6 +155,8 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+.DS_Store
 
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can

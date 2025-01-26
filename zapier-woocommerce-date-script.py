@@ -14,6 +14,7 @@ product_name = product.get('name', '')
 
 challenge_chosen = 'Private Challenge' if 'private' in product_name.lower() else 'Classic Challenge'
 company_or_individual = 'Bedrijf (Company)' if ('compan' in product_name.lower() or 'bedrij' in product_name.lower()) else 'Particulier (Individual)'
+language = 'Nederlands' if ('bedrij' in product_name.lower() or 'particulier' in product_name.lower()) else 'English'
 
 participants = 0
 interval_minutes = 0
@@ -100,4 +101,5 @@ return {
 	'challenge_to_time': challenge_to_time,
 	'participants': participants,
 	'questions_or_wishes': data['customer_note'],
+	'language': language,
 }
