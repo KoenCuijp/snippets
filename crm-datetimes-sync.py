@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import requests
+import traceback
 
 from datetime import datetime
 from typing import Any
@@ -19,6 +20,7 @@ TIMESTAMP_WITHOUT_TIMEZONE = GOOGLE_TIMESTAMP_FORMAT.replace('%z', '')
 AMSTERDAM_TIMEZONE = pytz.timezone('Europe/Amsterdam')
 PARENT_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVICE_ACCOUNT_FILE = os.path.join(PARENT_DIR, 'upc-google-service-account.json')
+VERBOSE_LOGGING = os.getenv('VERBOSE_LOGGING', 'False').lower() == 'true'
 
 # Global variable to store credentials
 credentials = None
@@ -34,7 +36,8 @@ def get_google_access_token():
         )
 
     if credentials.token is None or not credentials.valid:
-        print('Refreshing Google access token')
+        if VERBOSE_LOGGING:
+            print('Refreshing Google access token')
         credentials.refresh(Request())
     return credentials.token
 
@@ -52,9 +55,10 @@ def make_request(url, method='GET', headers=None, data=None, params=None):
     try:
         response.raise_for_status()
     except Exception as e:
-        print(f'Request to {url} failed with exception: {e}')
-        print(response.status_code)
-        print(response.text)
+        if VERBOSE_LOGGING:
+            print(f'Request to {url} failed with exception: {e}')
+            print(response.status_code)
+            print(response.text)
         raise e
     return response.json()
 
@@ -76,7 +80,8 @@ def get_freshsales_deals(api_key: str, domain: str) -> list[dict[str, Any]]:
     done_fetching = False
     while not done_fetching:
         page_url = f'{url}&page={page}'
-        print(f'GET {page_url}')
+        if VERBOSE_LOGGING:
+            print(f'GET {page_url}')
         data = make_request(page_url, headers=headers)
         max_page = data['meta']['total_pages'] if data.get('meta', {}).get('total_pages') else 1
         done_fetching = page >= max_page
@@ -167,11 +172,13 @@ def sync_calendar_with_deal(deal: dict[str, Any]) -> None:
     deal_start, deal_end, calendar_event_id = extract_fields_from_deal(deal)
         
     if not all([deal_start, deal_end]):
-        print('-> Missing date/start/end-time, skipping\n')
+        if VERBOSE_LOGGING:
+            print('-> Missing date/start/end-time, skipping\n')
         return
 
     if not calendar_event_id:
-        print('-> Missing Calendar ID, skipping\n')
+        if VERBOSE_LOGGING:
+            print('-> Missing Calendar ID, skipping\n')
         return
 
     event = get_google_calendar_event(calendar_event_id)
@@ -182,7 +189,8 @@ def sync_calendar_with_deal(deal: dict[str, Any]) -> None:
     update_needed = should_update_calendar_event(deal_start, event_start, deal_end, event_end)
 
     if update_needed:
-        print(f'-> SYNCING: start {event_start}->{deal_start} & end {event_end}->{deal_end}\n')
+        if VERBOSE_LOGGING:
+            print(f'-> SYNCING: start {event_start}->{deal_start} & end {event_end}->{deal_end}\n')
         deal_end = check_broken_endtime(deal_start, deal_end)
         event_data = {
             'start': {
@@ -194,7 +202,8 @@ def sync_calendar_with_deal(deal: dict[str, Any]) -> None:
         }
         update_google_calendar_event(calendar_event_id, event_data)
     else:
-        print(f'-> No updated needed: {event_start.isoformat()=},{deal_start.isoformat()=} & {event_end.isoformat()=},{deal_end.isoformat()=}\n')
+        if VERBOSE_LOGGING:
+            print(f'-> No updated needed: {event_start.isoformat()=},{deal_start.isoformat()=} & {event_end.isoformat()=},{deal_end.isoformat()=}\n')
 
 
 def update_deal_datefields(deal_id, expected_deal_summary, expected_date_readable_nl, expected_date_readable_en):
@@ -242,10 +251,12 @@ def sync_deal_date_fields(deal):
 
     # Compare the expected & actual to see if we need to update
     if deal_summary != expected_deal_summary or date_readable_nl != expected_date_readable_nl or date_readable_en != expected_date_readable_en:
-        print(f'\nUpdating deal {deal_id}:\n-{deal_summary}->{expected_deal_summary}\n-{date_readable_nl}->{expected_date_readable_nl}\n-{date_readable_en}->{expected_date_readable_en}\n')
+        if VERBOSE_LOGGING:
+            print(f'\nUpdating deal {deal_id}:\n-{deal_summary}->{expected_deal_summary}\n-{date_readable_nl}->{expected_date_readable_nl}\n-{date_readable_en}->{expected_date_readable_en}\n')
         update_deal_datefields(deal_id, expected_deal_summary, expected_date_readable_nl, expected_date_readable_en)
     else:
-        print('No update needed\n')
+        if VERBOSE_LOGGING:
+            print('No update needed\n')
 
 
 def sync_deals_datetime_changes(sync_to: str) -> None:
@@ -258,12 +269,14 @@ def sync_deals_datetime_changes(sync_to: str) -> None:
 
     if sync_to == 'freshsales_fields':
         for deal in deals:
-            print(f'CHECK FRESHSALES {deal["id"]} - {deal["name"]}')
+            if VERBOSE_LOGGING:
+                print(f'CHECK FRESHSALES {deal["id"]} - {deal["name"]}')
             sync_deal_date_fields(deal)
 
     if sync_to == 'google_calendar':
         for deal in deals:
-            print(f'CHECK CALENDAR {deal["id"]} - {deal["name"]}')
+            if VERBOSE_LOGGING:
+                print(f'CHECK CALENDAR {deal["id"]} - {deal["name"]}')
             sync_calendar_with_deal(deal)
 
 
@@ -296,7 +309,11 @@ def translate_date(date_str):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Sync the date/time in freshsales to either google calendar or to other fields in freshsales')
-    parser.add_argument('sync_to', choices=['google_calendar', 'freshsales_fields'], help='Where to sync the date/time to')
-    args = parser.parse_args()
-    sync_deals_datetime_changes(args.sync_to)
+    try:
+        parser = argparse.ArgumentParser(description='Sync the date/time in freshsales to either google calendar or to other fields in freshsales')
+        parser.add_argument('sync_to', choices=['google_calendar', 'freshsales_fields'], help='Where to sync the date/time to')
+        args = parser.parse_args()
+        sync_deals_datetime_changes(args.sync_to)
+    except Exception as e:
+        print(f'Sync {args.sync_to} failed with exception: {e}')
+        traceback.print_exc()
