@@ -1,9 +1,43 @@
-import json
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from datetime import datetime
 
-webhook_data = input_data['webhook_data']
-data = json.loads(webhook_data)
+# WooCommerce API credentials
+WC_API_URL = 'https://utrechtphotochallenge.com/wp-json/wc/v3'
+WC_CONSUMER_KEY = 'ck_here'
+WC_CONSUMER_SECRET = 'cs_here'
+
+def get_session_with_retries():
+    session = requests.Session()
+    retries = Retry(
+        total=5,
+        backoff_factor=1,
+        status_forcelist=[429, 500, 502, 503, 504]
+    )
+    adapter = HTTPAdapter(max_retries=retries)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    return session
+
+def get_order_by_id(order_id):
+    session = get_session_with_retries()
+    url = f'{WC_API_URL}/orders/{order_id}'
+    print(f'GET {url}')
+    response = session.get(url, auth=(WC_CONSUMER_KEY, WC_CONSUMER_SECRET))
+    print(f'Response: {response.status_code}')
+    
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception(f'Error fetching order: {response.status_code} - {response.text}')
+
+
+# order_id = input_data['wc_order_id']
+order_id = 9005
+data = get_order_by_id(order_id)
+print(data)
 
 line_items = data['line_items']
 if not line_items:
@@ -78,7 +112,7 @@ def translate_date(date_str):
     return date_str
 
 
-return {
+print({
 	'first_name': firstname,
 	'last_name': lastname,
 	'company': company_name,
@@ -88,7 +122,6 @@ return {
 	'country': data['billing']['country'],
 	'email': data['billing']['email'],
 	'phone': data['billing']['phone'],
-	'challenge_chosen': challenge_chosen,
 	'challenge_chosen': challenge_chosen,
 	'company_or_individual': company_or_individual,
 	'deal_name': company_name if 'company' in company_or_individual.lower() else f'{firstname} {lastname}',
@@ -102,4 +135,4 @@ return {
 	'participants': participants,
 	'questions_or_wishes': data['customer_note'],
 	'language': language,
-}
+})
