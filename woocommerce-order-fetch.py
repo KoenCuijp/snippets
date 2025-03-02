@@ -112,7 +112,7 @@ def translate_date(date_str):
     return date_str
 
 
-print({
+return {
 	'first_name': firstname,
 	'last_name': lastname,
 	'company': company_name,
@@ -135,4 +135,4 @@ print({
 	'participants': participants,
 	'questions_or_wishes': data['customer_note'],
 	'language': language,
-})
+}
