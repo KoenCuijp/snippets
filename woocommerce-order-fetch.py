@@ -34,8 +34,8 @@ def get_order_by_id(order_id):
         raise Exception(f'Error fetching order: {response.status_code} - {response.text}')
 
 
-# order_id = input_data['wc_order_id']
-order_id = 9005
+order_id = input_data['wc_order_id']
+#order_id = 9005
 data = get_order_by_id(order_id)
 print(data)
 
@@ -46,7 +46,15 @@ if not line_items:
 product = line_items[0]
 product_name = product.get('name', '')
 
-challenge_chosen = 'Private Challenge' if 'private' in product_name.lower() else 'Classic Challenge'
+if 'bijboeken' in product_name.lower() or 'add players' in product_name.lower():
+	challenge_chosen = 'Add players'
+elif 'private' in product_name.lower():
+	challenge_chosen = 'Private Challenge'
+elif 'classic' in product_name.lower():
+	challenge_chosen = 'Classic Challenge'
+else:
+    raise Exception(f'Unknown product name: {product_name}')
+
 company_or_individual = 'Bedrijf (Company)' if ('compan' in product_name.lower() or 'bedrij' in product_name.lower()) else 'Particulier (Individual)'
 language = 'Nederlands' if ('bedrij' in product_name.lower() or 'particulier' in product_name.lower()) else 'English'
 
