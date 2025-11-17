@@ -13,7 +13,7 @@ from google.oauth2 import service_account
 from google.auth.transport.requests import Request
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from credentials import FRESHSALES_TOKEN, FRESHSALES_DOMAIN, GOOGLE_CALENDAR_ID
+from credentials import FRESHSALES_TOKEN, FRESHSALES_DOMAIN, CALENDAR_ID_UTRECHT, CALENDAR_ID_ROTTERDAM
 
 GOOGLE_TIMESTAMP_FORMAT = '%Y-%m-%dT%H:%M:%S%z'
 TIMESTAMP_WITHOUT_TIMEZONE = GOOGLE_TIMESTAMP_FORMAT.replace('%z', '')
@@ -32,8 +32,8 @@ def get_google_access_token():
         credentials = service_account.Credentials.from_service_account_file(
             SERVICE_ACCOUNT_FILE,
             scopes=['https://www.googleapis.com/auth/calendar'],
-            # impersonate upc user to send emails from this email address
-            subject='info@utrechtphotochallenge.com'
+            # impersonate urban klik user to send emails from this email address
+            subject='info@urbanklik.com'
         )
 
     if credentials.token is None or not credentials.valid:
@@ -92,12 +92,12 @@ def get_freshsales_deals(api_key: str, domain: str) -> list[dict[str, Any]]:
     return deals
 
 
-def get_google_calendar_event(event_id: int) -> dict[str, Any]:
+def get_google_calendar_event(event_id: int, calendar_id: str) -> dict[str, Any]:
     """
     Fetches the Google Calendar event by ID
     """
     access_token = get_google_access_token()
-    url = f'https://www.googleapis.com/calendar/v3/calendars/{GOOGLE_CALENDAR_ID}/events/{event_id}'
+    url = f'https://www.googleapis.com/calendar/v3/calendars/{calendar_id}/events/{event_id}'
     headers = {
         'Authorization': f'Bearer {access_token}',
         'Accept': 'application/json'
@@ -105,9 +105,9 @@ def get_google_calendar_event(event_id: int) -> dict[str, Any]:
     return make_request(url, headers=headers)
 
 
-def update_google_calendar_event(event_id: str, event_data: dict[str, Any]) -> None:
+def update_google_calendar_event(event_id: str, event_data: dict[str, Any], calendar_id: str) -> None:
     access_token = get_google_access_token()
-    url = f'https://www.googleapis.com/calendar/v3/calendars/{GOOGLE_CALENDAR_ID}/events/{event_id}?sendUpdates=all'
+    url = f'https://www.googleapis.com/calendar/v3/calendars/{calendar_id}/events/{event_id}?sendUpdates=all'
     headers = {
         'Authorization': f'Bearer {access_token}',
         'Accept': 'application/json',
@@ -116,9 +116,9 @@ def update_google_calendar_event(event_id: str, event_data: dict[str, Any]) -> N
     make_request_ignore_errors(url, method='PATCH', headers=headers, data=json.dumps(event_data))
 
 
-def delete_google_calendar_event(event_id: str) -> None:
+def delete_google_calendar_event(event_id: str, calendar_id: str) -> None:
     access_token = get_google_access_token()
-    url = f'https://www.googleapis.com/calendar/v3/calendars/{GOOGLE_CALENDAR_ID}/events/{event_id}'
+    url = f'https://www.googleapis.com/calendar/v3/calendars/{calendar_id}/events/{event_id}'
     headers = {
         'Authorization': f'Bearer {access_token}',
         'Accept': 'application/json'
@@ -162,11 +162,11 @@ def extract_fields_from_deal(deal: dict[str, Any]) -> tuple[datetime, datetime, 
 
 
 def should_update_calendar_event(
-    deal_start: datetime,
-    event_start: datetime,
-    deal_end: datetime,
-    event_end: datetime
-    ) -> bool:
+        deal_start: datetime,
+        event_start: datetime,
+        deal_end: datetime,
+        event_end: datetime
+) -> bool:
     """
     Compare the deal & calendar start & end datetimes
     """
@@ -183,23 +183,31 @@ def check_broken_endtime(start: datetime, end: datetime) -> datetime:
     return end
 
 
+def get_calendar_id_by_city(city: str) -> str:
+    if city == 'Utrecht':
+        return CALENDAR_ID_UTRECHT
+    elif city == 'Rotterdam':
+        return CALENDAR_ID_ROTTERDAM
+    else:
+        raise ValueError(f"Unknown city '{city}'")
+
+
 def handle_lost_deal(deal: dict[str, Any]) -> None:
     """
     Handle a lost deal by deleting the calendar event from Google Calendar and removing the calendar ID from the deal
     """
-    calendar_event_id = deal['custom_field']['cf_google_calendar_id']
-    if not calendar_event_id:
+    google_event_id = deal['custom_field']['cf_google_calendar_id']
+    if not google_event_id:
         return
 
-    if VERBOSE_LOGGING:
-        print(f'-> Deleting calendar event {calendar_event_id} for lost deal {deal["id"]} - {deal["name"]}')
+    google_calendar_id = get_calendar_id_by_city(deal['custom_field']['cf_city'])
 
     try:
-        event = get_google_calendar_event(calendar_event_id)
+        event = get_google_calendar_event(google_event_id, google_calendar_id)
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 404 or e.response.status_code == 410:
             if VERBOSE_LOGGING:
-                print(f'-> Calendar event {calendar_event_id} not found, skipping delete\n')
+                print(f'-> Calendar event {google_event_id} not found, skipping delete\n')
                 update_deal_empty_calendar_id(deal['id'])
                 return
         else:
@@ -207,7 +215,9 @@ def handle_lost_deal(deal: dict[str, Any]) -> None:
 
     # Only delete event if it's an OPTIE event
     if 'OPTIE' in event['summary']:
-        delete_google_calendar_event(calendar_event_id)
+        if VERBOSE_LOGGING:
+            print(f'-> Deleting calendar event {google_event_id} for lost deal {deal["id"]} - {deal["name"]}')
+        delete_google_calendar_event(google_event_id, google_calendar_id)
         update_deal_empty_calendar_id(deal['id'])
 
 
@@ -219,24 +229,26 @@ def sync_calendar_with_deal(deal: dict[str, Any]) -> None:
         handle_lost_deal(deal)
         return
 
-    deal_start, deal_end, calendar_event_id = extract_fields_from_deal(deal)
-        
+    deal_start, deal_end, google_event_id = extract_fields_from_deal(deal)
+
     if not all([deal_start, deal_end]):
         if VERBOSE_LOGGING:
             print('-> Missing date/start/end-time, skipping\n')
         return
 
-    if not calendar_event_id:
+    if not google_event_id:
         if VERBOSE_LOGGING:
             print('-> Missing Calendar ID, skipping\n')
         return
 
+    google_calendar_id = get_calendar_id_by_city(deal['custom_field']['cf_city'])
+
     try:
-        event = get_google_calendar_event(calendar_event_id)
+        event = get_google_calendar_event(google_event_id, google_calendar_id)
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 404:
             if VERBOSE_LOGGING:
-                print(f'-> Calendar event {calendar_event_id} not found, skipping\n')
+                print(f'-> Calendar event {google_event_id} not found, skipping\n')
             update_deal_empty_calendar_id(deal['id'])
             return
         raise e
@@ -259,7 +271,7 @@ def sync_calendar_with_deal(deal: dict[str, Any]) -> None:
                 'dateTime': deal_end.strftime(GOOGLE_TIMESTAMP_FORMAT)
             }
         }
-        update_google_calendar_event(calendar_event_id, event_data)
+        update_google_calendar_event(google_event_id, event_data, google_calendar_id)
     else:
         if VERBOSE_LOGGING:
             print(f'-> No updated needed: {event_start.isoformat()=},{deal_start.isoformat()=} & {event_end.isoformat()=},{deal_end.isoformat()=}\n')
@@ -384,9 +396,12 @@ def translate_date(date_str):
     }
     for english, dutch in tranlations.items():
         date_str = date_str.replace(english, dutch)
-    
+
     return date_str
 
+
+# TODO: Test with Rotterdam test event
+# TODO: deploy new credentials to server, together with updated script
 
 if __name__ == "__main__":
     try:
