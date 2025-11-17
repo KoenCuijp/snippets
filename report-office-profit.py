@@ -25,94 +25,138 @@
 # - profit_on_recurring_invoices_incl_vat - total_onetime_costs_incl_vat (name this total_profit_incl_vat)
 #
 
+from openpyxl import load_workbook
+from collections import defaultdict
+
+def load_excel_data(filename, sheetname=None):
+    """Load data from an Excel sheet into a list of dicts."""
+    wb = load_workbook(filename, data_only=True)
+    ws = wb[sheetname] if sheetname else wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    headers = [str(h).strip() for h in rows[0]]
+    data = []
+    for row in rows[1:]:
+        item = {headers[i]: row[i] for i in range(len(headers))}
+        data.append(item)
+    return data
 
 
-import pandas as pd
-import warnings
+def process_income(filename):
+    data = load_excel_data(filename)
+    grouped = defaultdict(lambda: {
+        "Aantal facturen": 0,
+        "Totaal incl. btw": 0.0,
+        "Totaal excl. btw": 0.0
+    })
 
-warnings.filterwarnings(
-    "ignore",
-    message="Workbook contains no default style, apply openpyxl's default",
-    module="openpyxl"
-)
+    months = set()
 
-# Load inkomsten.xlsx (Note: facturen downloaden, niet factuurregels)
-df_income = pd.read_excel('~/inkomsten.xlsx')
-# Determine number of unique months in inkomsten.xlsx
-df_income['Datum'] = pd.to_datetime(df_income['Datum'])
-amount_of_months = df_income['Datum'].dt.to_period('M').nunique()
+    # Get amount of invoices paid per person
+    for row in data:
+        month = row["Datum"].month
+        if month:
+            months.add(month)
+        person = str(row.get("Contactpersoon", "")).strip()
+        incl = float(row.get("Totaal incl. btw", 0) or 0)
+        excl = float(row.get("Totaal excl. btw", 0) or 0)
 
-# Group by Contactpersoon and sort by Aantal_facturen descending
-grouped = df_income.groupby('Contactpersoon').agg(
-    Aantal_facturen=('Contactpersoon', 'count'),
-    Totaal_incl_btw=('Totaal incl. btw', 'sum'),
-    Totaal_excl_btw=('Totaal excl. btw', 'sum')
-).reset_index().sort_values(by='Aantal_facturen', ascending=False)
+        grouped[person]["Aantal facturen"] += 1
+        grouped[person]["Totaal incl. btw"] += incl
+        grouped[person]["Totaal excl. btw"] += excl
 
-print("\n========== Inkomen per persoon ==========")
-print(grouped)
+    # Add invoices for Koen
+    nr_of_months = len(months)
+    grouped["Koen Cuijp"]["Aantal facturen"] = nr_of_months
+    grouped["Koen Cuijp"]["Totaal incl. btw"] += nr_of_months * 327.91
+    grouped["Koen Cuijp"]["Totaal excl. btw"] += nr_of_months * 271.00
 
-# Totals over all persons
-print("\n========== Inkomen totaal ==========")
-total_incl_btw = grouped['Totaal_incl_btw'].sum()
-total_excl_btw = grouped['Totaal_excl_btw'].sum()
-print(f"Totaal excl. btw: {total_excl_btw:.2f}")
-# print(f"Totaal incl. btw: {total_incl_btw:.2f}")
+    # Print per person
+    print("\n=== Inkomsten per huurder ===")
+    total_incl = total_excl = total_count = 0
+    for person, vals in sorted(grouped.items()):
+        print(f"{person.strip()[0:25].ljust(25)} \t {vals['Aantal facturen']} facturen \t {vals['Totaal excl. btw']:.2f} excl. btw")
+        total_count += vals['Aantal facturen']
+        total_incl += vals['Totaal incl. btw']
+        total_excl += vals['Totaal excl. btw']
 
-# Load kosten.xlsx (Note: factuurregels downloaden, niet facturen)
-df_costs = pd.read_excel('~/kosten.xlsx')
+    print("-----------------------------------------------------------------------------------------------")
+    print(f"Totaal inkomsten: {total_excl:.2f} excl. btw")
 
-# Monthly costs
-monthly_mask = (
-        (df_costs['Categorie'] == '4601 Kantoor kosten maandelijks') |
-        ((df_costs['Categorie'] == '4800 Softwarekosten') & df_costs['Omschrijving'].str.lower().str.contains('knab', na=False))
-)
-grouped_monthly = df_costs[monthly_mask].groupby('Relatie').agg(
-    Aantal_factuurregels=('Relatie', 'count'),
-    Totaal_incl_btw=('Totaal incl. btw', 'sum'),
-    Totaal_excl_btw=('Totaal excl. btw', 'sum')
-).reset_index().sort_values(by='Aantal_factuurregels', ascending=False)
+    return total_incl, total_excl, nr_of_months
 
-# Add cleaning costs to grouped_monthly
-cleaning_total = amount_of_months * 75.83
-cleaning_row = pd.DataFrame({
-    'Relatie': ['Schoonmaakkosten'],
-    'Aantal_factuurregels': [amount_of_months],
-    'Totaal_incl_btw': [cleaning_total],
-    'Totaal_excl_btw': [cleaning_total]
-})
-grouped_monthly = pd.concat([grouped_monthly, cleaning_row], ignore_index=True)
-total_monthly_costs_incl_vat = df_costs[monthly_mask]['Totaal incl. btw'].sum() + cleaning_total
-total_monthly_costs_excl_vat = df_costs[monthly_mask]['Totaal excl. btw'].sum() + cleaning_total
 
-# One-time costs
-onetime_mask = df_costs['Categorie'] == '4602 Kantoor kosten eenmalig'
-total_onetime_costs_incl_vat = df_costs[onetime_mask]['Totaal incl. btw'].sum()
-total_onetime_costs_excl_vat = df_costs[onetime_mask]['Totaal excl. btw'].sum()
-onetime_overview = df_costs.loc[onetime_mask, ['Relatie', 'Omschrijving', 'Totaal incl. btw', 'Totaal excl. btw']]
-onetime_overview = onetime_overview.sort_values(by='Totaal incl. btw', ascending=False)
+def process_costs(filename, nr_of_months):
+    data = load_excel_data(filename)
 
-print("\n========== Maandelijkse kosten ==========")
-print(grouped_monthly)
-print(f"Totaal excl. btw: {total_monthly_costs_excl_vat:.2f}")
-# print(f"Totaal incl. btw: {total_monthly_costs_excl_vat:.2f}")
+    total_monthly_costs_incl_vat = 0.0
+    total_monthly_costs_excl_vat = 0.0
+    total_onetime_costs_incl_vat = 0.0
+    total_onetime_costs_excl_vat = 0.0
 
-print("\n========== Eenmalige kosten ==========")
-print(onetime_overview)
-print(f"Totaal excl. btw: {total_onetime_costs_excl_vat:.2f}")
-#print(f"Totaal incl. btw: {total_onetime_costs_incl_vat:.2f}")
+    costs_monthly = {}
+    costs_onetime = {}
 
-# Profit calculations
-profit_on_recurring_invoices_excl_vat = total_excl_btw - total_monthly_costs_excl_vat
-profit_on_recurring_invoices_incl_vat = total_incl_btw - total_monthly_costs_incl_vat
+    for row in data:
+        cat = str(row.get("Categorie", "")).strip()
+        desc = str(row.get("Omschrijving", "")).lower()
+        incl = float(row.get("Totaal incl. btw", 0) or 0)
+        excl = float(row.get("Totaal excl. btw", 0) or 0)
+        relatie = str(row.get("Relatie", "")).strip()
+        date = row.get("Datum")
 
-print("\n========== Winst (zonder aftrek eenmalige kosten) ==========")
-print(f"Excl. VAT: {profit_on_recurring_invoices_excl_vat:.2f}")
-# print(f"Incl. VAT: {profit_on_recurring_invoices_incl_vat:.2f}")
+        # Monthly costs
+        if cat == "4601 Kantoor kosten maandelijks" or (cat == "4800 Softwarekosten" and "knab" in desc):
+            total_monthly_costs_incl_vat += incl
+            total_monthly_costs_excl_vat += excl
+            costs_monthly[f"{relatie} - {desc[0:20]} - {date.strftime("%d-%m-%Y")}"] = excl
 
-total_profit_excl_vat = profit_on_recurring_invoices_excl_vat - total_onetime_costs_excl_vat
-total_profit_incl_vat = profit_on_recurring_invoices_incl_vat - total_onetime_costs_incl_vat
+        # One-time costs
+        elif cat == "4602 Kantoor kosten eenmalig":
+            total_onetime_costs_incl_vat += incl
+            total_onetime_costs_excl_vat += excl
+            costs_onetime[desc] = excl
 
-print("\n========== Winst (met aftrek eenmalige kosten) ==========")
-print(f"Excl. VAT: {total_profit_excl_vat:.2f}")
-# print(f"Incl. VAT: {total_profit_incl_vat:.2f}")
+    # Add cleaning costs
+    cleaning_costs = nr_of_months * 75.83
+    total_monthly_costs_incl_vat += cleaning_costs
+    total_monthly_costs_excl_vat += cleaning_costs
+    costs_monthly["Schoonmaker"] = cleaning_costs
+
+    print("\n=== Kosten maandelijks ===")
+    for desc, amount in sorted(costs_monthly.items()):
+        print(f"{desc[:60].ljust(60)} \t {amount:.2f} excl. btw")
+    print("-----------------------------------------------------------------------------------------------")
+    print(f"Totaal maandelijks excl. btw: {total_monthly_costs_excl_vat:.2f}")
+
+    print("\n=== Kosten eenmalig ===")
+    for desc, amount in sorted(costs_onetime.items()):
+        print(f"{desc[:60].ljust(60)} \t {amount:.2f} excl. btw")
+    print("-----------------------------------------------------------------------------------------------")
+    print(f"Totaal eenmalig excl. btw: {total_onetime_costs_excl_vat:.2f}")
+
+    return (
+        total_monthly_costs_incl_vat, total_monthly_costs_excl_vat,
+        total_onetime_costs_incl_vat, total_onetime_costs_excl_vat
+    )
+
+
+def main():
+    total_income_incl, total_income_excl, nr_of_months = process_income("/Users/koencuijp/inkomsten.xlsx")
+    (
+        monthly_incl, monthly_excl,
+        onetime_incl, onetime_excl
+    ) = process_costs("/Users/koencuijp/kosten.xlsx", nr_of_months)
+
+    profit_on_recurring_invoices_excl_vat = total_income_excl - monthly_excl
+    profit_on_recurring_invoices_incl_vat = total_income_incl - monthly_incl
+
+    total_profit_excl_vat = profit_on_recurring_invoices_excl_vat - onetime_excl
+    total_profit_incl_vat = profit_on_recurring_invoices_incl_vat - onetime_incl
+
+    print("\n=== Resultaten ===")
+    print(f"Inkomsten maandelijks - Kosten maandelijks: {profit_on_recurring_invoices_excl_vat:.2f}")
+    print(f"Inkomsten maandelijks - Kosten maandelijks - Kosten eenmalig: {total_profit_excl_vat:.2f}")
+
+
+if __name__ == "__main__":
+    main()
