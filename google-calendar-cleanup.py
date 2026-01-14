@@ -4,7 +4,7 @@ from google.auth.transport.requests import Request
 
 def get_access_token():
     credentials = service_account.Credentials.from_service_account_file(
-        'google-service-account.json',
+        'urban-klik-google-service-account.json',
         scopes=['https://www.googleapis.com/auth/calendar']
     )
     credentials.refresh(Request())

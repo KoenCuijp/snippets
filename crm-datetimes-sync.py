@@ -19,7 +19,7 @@ GOOGLE_TIMESTAMP_FORMAT = '%Y-%m-%dT%H:%M:%S%z'
 TIMESTAMP_WITHOUT_TIMEZONE = GOOGLE_TIMESTAMP_FORMAT.replace('%z', '')
 AMSTERDAM_TIMEZONE = pytz.timezone('Europe/Amsterdam')
 PARENT_DIR = os.path.dirname(os.path.abspath(__file__))
-SERVICE_ACCOUNT_FILE = os.path.join(PARENT_DIR, 'upc-google-service-account.json')
+SERVICE_ACCOUNT_FILE = os.path.join(PARENT_DIR, 'urban-klik-google-service-account.json')
 VERBOSE_LOGGING = os.getenv('VERBOSE_LOGGING', 'False').lower() == 'true'
 DEAL_LOST_STAGE = 31000967492
 
@@ -400,9 +400,6 @@ def translate_date(date_str):
 
     return date_str
 
-
-# TODO: Test with Rotterdam test event
-# TODO: deploy new credentials to server, together with updated script
 
 if __name__ == "__main__":
     try:
