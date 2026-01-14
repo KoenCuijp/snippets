@@ -176,7 +176,8 @@ def should_update_calendar_event(
 
 def check_broken_endtime(start: datetime, end: datetime) -> datetime:
     """
-    If the end time is before the start time, set the end time to 2,5 hours after the start time
+    If the end time is before the start time, set the end time to 1 hour after the start time. We do 1 hour instead of
+    2.5 hours to make it clear that the end time was autocorrected.
     """
     if end <= start:
         end = start.replace(hour=start.hour + 1)
