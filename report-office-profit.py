@@ -1,3 +1,14 @@
+# Inkomsten exporteren:
+# - Filter facturen van 12-10-2024 (eerste factuur voor bureaus) t/m 23 december van het laatste jaar dat je mee wilt nemen
+# - Exporteer de facturen (niet de factuurregels)
+# - Sla op als inkomsten.xls
+
+# Kosten exporteren:
+# - Filter op kosten van 29-09-2024 (eerste kosten) t/m 31 december van het laatste jaar dat je mee wilt nemen
+# - Exporteer de factuurregels (niet de facturen)
+# - Sla op als kosten.xls
+
+
 # Can you write a Python script for me that does the following?
 #
 # It loads an excel sheet named "inkomsten.xslx" and does the following:
@@ -53,10 +64,16 @@ def process_income(filename):
 
     # Get amount of invoices paid per person
     for row in data:
-        month = row["Datum"].month
+        month = f'{row["Datum"].month} {row["Datum"].year}'
         if month:
             months.add(month)
-        person = str(row.get("Contactpersoon", "")).strip()
+        person = str(row.get("Contactpersoon", "")).strip().replace("\u2060", "")
+        relatie = str(row.get("Relatie", "")).strip()
+
+        # Skip any invoices from work if they're there
+        if 'milsweaft' in relatie.lower() or 'debhoelai' in relatie.lower():
+            continue
+
         incl = float(row.get("Totaal incl. btw", 0) or 0)
         excl = float(row.get("Totaal excl. btw", 0) or 0)
 
@@ -66,9 +83,9 @@ def process_income(filename):
 
     # Add invoices for Koen
     nr_of_months = len(months)
-    grouped["Koen Cuijp"]["Aantal facturen"] = nr_of_months
-    grouped["Koen Cuijp"]["Totaal incl. btw"] += nr_of_months * 327.91
-    grouped["Koen Cuijp"]["Totaal excl. btw"] += nr_of_months * 271.00
+    grouped["Koen Cuijp"]["Aantal facturen"] = nr_of_months + 2  # 2 Extra: eerste huur ook in 1e maand en gedeelde leegstand in zelfde maand als reguliere factuur
+    grouped["Koen Cuijp"]["Totaal incl. btw"] += (nr_of_months * 327.91) + 327.91 + 81.98
+    grouped["Koen Cuijp"]["Totaal excl. btw"] += (nr_of_months * 271.00) + 271.00 + 67.75
 
     # Print per person
     print("\n=== Inkomsten per huurder ===")
@@ -114,7 +131,7 @@ def process_costs(filename, nr_of_months):
         elif cat == "4602 Kantoor kosten eenmalig":
             total_onetime_costs_incl_vat += incl
             total_onetime_costs_excl_vat += excl
-            costs_onetime[desc] = excl
+            costs_onetime[f"{relatie} - {desc}"] = excl
 
     # Add cleaning costs
     cleaning_costs = nr_of_months * 75.83
@@ -126,13 +143,13 @@ def process_costs(filename, nr_of_months):
     for desc, amount in sorted(costs_monthly.items()):
         print(f"{desc[:60].ljust(60)} \t {amount:.2f} excl. btw")
     print("-----------------------------------------------------------------------------------------------")
-    print(f"Totaal maandelijks excl. btw: {total_monthly_costs_excl_vat:.2f}")
+    print(f"Totaal kosten maandelijks excl. btw: {total_monthly_costs_excl_vat:.2f}")
 
     print("\n=== Kosten eenmalig ===")
     for desc, amount in sorted(costs_onetime.items()):
         print(f"{desc[:60].ljust(60)} \t {amount:.2f} excl. btw")
     print("-----------------------------------------------------------------------------------------------")
-    print(f"Totaal eenmalig excl. btw: {total_onetime_costs_excl_vat:.2f}")
+    print(f"Totaal kosten eenmalig excl. btw: {total_onetime_costs_excl_vat:.2f}")
 
     return (
         total_monthly_costs_incl_vat, total_monthly_costs_excl_vat,
@@ -141,11 +158,11 @@ def process_costs(filename, nr_of_months):
 
 
 def main():
-    total_income_incl, total_income_excl, nr_of_months = process_income("/Users/koencuijp/inkomsten.xlsx")
+    total_income_incl, total_income_excl, nr_of_months = process_income("/Users/koencuijp/Desktop/inkomsten.xlsx")
     (
         monthly_incl, monthly_excl,
         onetime_incl, onetime_excl
-    ) = process_costs("/Users/koencuijp/kosten.xlsx", nr_of_months)
+    ) = process_costs("/Users/koencuijp/Desktop/kosten.xlsx", nr_of_months)
 
     profit_on_recurring_invoices_excl_vat = total_income_excl - monthly_excl
     profit_on_recurring_invoices_incl_vat = total_income_incl - monthly_incl
@@ -153,9 +170,13 @@ def main():
     total_profit_excl_vat = profit_on_recurring_invoices_excl_vat - onetime_excl
     total_profit_incl_vat = profit_on_recurring_invoices_incl_vat - onetime_incl
 
-    print("\n=== Resultaten ===")
+    print("\n=== Berekening Eindresultaat ===")
     print(f"Inkomsten maandelijks - Kosten maandelijks: {profit_on_recurring_invoices_excl_vat:.2f}")
     print(f"Inkomsten maandelijks - Kosten maandelijks - Kosten eenmalig: {total_profit_excl_vat:.2f}")
+    print("\n--------------------- DISCLAIMERS ---------------------")
+    print("Pakt alleen kosten met categorie 'Kantoor kosten maandelijks', 'Kantoor kosten eenmalig' en knab software kosten")
+    print("   Alle kosten ingevoerd in die catogorieen?")
+    print("!!! - Check ook even of credit facturen goed verrekend worden")
 
 
 if __name__ == "__main__":
